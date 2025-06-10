@@ -1,6 +1,7 @@
 <drac2>
 cargs = &ARGS&[1:&ARGS&.index("*")] if '*' in &ARGS& else &ARGS&[1:]  # make a list of our casting args, splitting on * if supplied
 aargs = &ARGS&[&ARGS&.index("*")+1:] if '*' in &ARGS& else []  # make a list of our arcana roll args
+
 ma ='Mizzium Apparatus'
 ch = character()
 
@@ -19,9 +20,14 @@ a  = argparse(aargs)
 g  = load_json(get_gvar('c7fac1dc-a814-4b1e-81b0-f3ee6abec1cf'))
 i  = argparse(&ARGS&).get('i')
 
-racialBonus = "+1d4[Artisan's Intuition]" if "Mark of Making" in ch.race else "+1d4[Tireless Precision]" if "Vedalken" in ch.race and "precision" in aargs else ''  # allow for racial bonuses
-rollstring  =["1d20","2d20kh1","2d20kl1"][a.adv()] + ("mi"+a.last("mc") if a.last("mc") else "mi10" if character().csettings.get('talent',0) and ch.skills.arcana.prof >= 1 else "")+"+"+str(ch.skills.arcana.value)+("+"+a.join("b","+") if a.last("b") else "")+ ("+1d4" if "guidance" in aargs else "")+racialBonus  # old skool roll string construction
-
+# racial & guidance bonuses
+racialBonus = "+1d4[Artisan's Intuition]" if "Mark of Making" in ch.race else "+1d4[Tireless Precision]" if "Vedalken" in ch.race and "precision" in aargs else ''
+rollstring = ["1d20","2d20kh1","2d20kl1"][a.adv()]
+rollstring += ("mi" + a.last("mc") if a.last("mc") else "mi10" if character().csettings.get('talent',0) and ch.skills.arcana.prof >= 1 else "")
+rollstring += "+" + str(ch.skills.arcana.value)
+rollstring += ("+" + a.join("b","+") if a.last("b") else "")
+rollstring += ("+1d4" if "guidance" in aargs else "")
+rollstring += racialBonus
 aRoll = vroll(rollstring)  # our arcana roll
 
 # -- HOMEBREW SPELLS -- #
@@ -74,9 +80,11 @@ elif not fullSpellName:
 else:
   fullSpellName = fullSpellName[0]
 
-# apply name override
+# Custom cast args
 name_override = cparse.last("n")  # use -n "Custom Name"
 displayName = name_override if name_override else fullSpellName
+vc_arg       = cparse.last("vc")   # -vc "Verbal Component"
+vc_field    = f"-f \"Verbal Component|{vc_arg}\"" if vc_arg else ''
 
 # -- Casting the spell -- #
 
@@ -92,20 +100,20 @@ if slevel in ['0','1','2','3','4','5','6','7','8','9']:
   dc     = 10+(int(slevel)*2)  # calculate our dc based off spell level
   rslevel= slevel if slevel in ['0','1','2','3','4','5'] else '5'  # random spell has a max level 5 on fail
   v      = dc <= aRoll.total
-  rSpell = '' if slevel == '0' else g.fspell[rslevel][randint(len(g.fspell[rslevel]))]
+  fail_spell = '' if slevel == '0' else g.fspell[rslevel][randint(len(g.fspell[rslevel]))]
 
   if slevel=='0':  # cantrip casting
     if v:
-      return f'''cast "{fullSpellName}" i {' '.join(f'"{carg}"' if " " in carg else carg for carg in cargs)} -title "{name} casts __{displayName }__ with their {ma}!" -phrase "*Arcana roll:** {aRoll}\n**DC: {dc}** *Success!" -f "{g.miz}" '''
+      return f'''cast "{fullSpellName}" i {' '.join(f'"{carg}"' if " " in carg else carg for carg in cargs)} -title "{name} casts __{displayName }__ with their {ma}!" -phrase "*Arcana roll:** {aRoll}\n**DC: {dc}** *Success!" {vc_field} -f "{g.miz}" '''
     else:
       return f'''embed -title "Your ineptitude has caused your {ma} to malfunction!" -desc "_**Arcana roll:** {aRoll}_\n_**DC: {dc}** Failure!_\n\n If you try to cast a cantrip you don't know, the DC for the Intelligence (Arcana) check is 10, and on a failed check, there is no effect." -f "{g.miz}" '''
   elif slevel!='0':  # non-cantrip casting
     if x:
       ch.spellbook.use_slot(int(slevel)) if not i else ''
       if v:  # we beat the dc and are casting the spell we wanted
-        return f'''cast "{fullSpellName}" i {' '.join(f'"{carg}"' if " " in carg else carg for carg in cargs)} -title "{name} casts __{displayName}__ with their {ma}!" -phrase "*Arcana roll:** {aRoll}\n**DC: {dc}** *Success!" -f "{g.miz}" -f "Spell Slots {'(-1)' if not i else ''}|{character().spellbook.slots_str(int(slevel))}" '''
+        return f'''cast "{fullSpellName}" i {' '.join(f'"{carg}"' if " " in carg else carg for carg in cargs)} -title "{name} casts __{displayName}__ with their {ma}!" -phrase "*Arcana roll:** {aRoll}\n**DC: {dc}** *Success!" {vc_field} -f "{g.miz}" -f "Spell Slots {'(-1)' if not i else ''}|{character().spellbook.slots_str(int(slevel))}" '''
       else:  # we failed the dc and are casting a random spell for this level
-        return f'''cast "{rSpell}" i {' '.join(f'"{carg}"' if " " in carg else carg for carg in cargs)} -title "{name} tries to cast __{displayName}__ with their {ma} but casts __{rSpell}__ instead!" -phrase "*Arcana roll:** {aRoll}\n**DC:** {dc} *Failure!*\n\n*On a successful check, you cast the spell as normal, using your spell save DC and spellcasting ability modifier. On a failed check, you cast a different spell from the one you intended. If the slot is 6th level or higher, roll on the table for 5th-level spells." -f "{g.miz}" -f "Spell Slots {'(-1)' if not i else ''}|{character().spellbook.slots_str(int(slevel))}" '''
+        return f'''cast "{fail_spell}" i {' '.join(f'"{carg}"' if " " in carg else carg for carg in cargs)} -title "{name} tries to cast __{displayName}__ with their {ma} but casts __{fail_spell}__ instead!" -phrase "*Arcana roll:** {aRoll}\n**DC:** {dc} *Failure!*\n\n*On a successful check, you cast the spell as normal, using your spell save DC and spellcasting ability modifier. On a failed check, you cast a different spell from the one you intended. If the slot is 6th level or higher, roll on the table for 5th-level spells." -f "{g.miz}" -f "Spell Slots {'(-1)' if not i else ''}|{character().spellbook.slots_str(int(slevel))}" '''
     elif mslot and not x:  # we're out of slots at this level
       return f'''embed -title "{name} does not have any slots left at level {slevel}!" -desc "You need a level {slevel} spell slot in order to use your {ma} like this!\n\nCast again at a different level or have a nap." -f "Spell Slots|{character().spellbook.slots_str(int(slevel))}" '''
     elif not mslot:  # we never had a slot this high
